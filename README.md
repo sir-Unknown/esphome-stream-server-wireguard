@@ -122,3 +122,75 @@ stream_server:
 If the WireGuard interface is not yet up when the device boots, the stream server will keep retrying in the background
 until the bind succeeds. No manual intervention or reboot is needed. Omitting `bind_wg` restores the default behaviour
 of binding to `0.0.0.0` (all interfaces).
+
+### Using bind_wg with Home Assistant add-ons (OTBR, Zigbee2MQTT)
+
+When `bind_wg` is active the stream server only accepts connections that arrive through the
+WireGuard tunnel. Most Home Assistant add-ons run with `host_network: false`, which means their
+`wg0` interface exists only inside the WireGuard add-on container and is not reachable from other
+add-ons directly.
+
+The solution is to add DNAT rules to the WireGuard add-on so it proxies TCP connections from the
+hassio bridge through `wg0` to the ESP32:
+
+```
+OTBR / Z2M  →  hassio bridge  →  WireGuard add-on  →  wg0  →  tunnel  →  ESP32
+```
+
+**1. Find the WireGuard add-on's hassio IP**
+
+```bash
+ha addons info a0d7b954_wireguard | grep ip_address
+```
+
+**2. Add iptables rules to the WireGuard add-on**
+
+Add one `PREROUTING` line per port. The `MASQUERADE -o %i` rule is required so the ESP32 sees
+the packet as coming from a WireGuard peer IP it can route back through the tunnel, rather than
+a hassio bridge address.
+
+```yaml
+server:
+  post_up: >-
+    iptables -A FORWARD -i %i -j ACCEPT;
+    iptables -A FORWARD -o %i -j ACCEPT;
+    iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE;
+    iptables -t nat -A POSTROUTING -o %i -j MASQUERADE;
+    iptables -t nat -A PREROUTING -p tcp --dport 6638 -j DNAT --to-destination <ESP32_WG_IP>:6638;
+    iptables -t nat -A PREROUTING -p tcp --dport 7638 -j DNAT --to-destination <ESP32_WG_IP>:7638
+  post_down: >-
+    iptables -D FORWARD -i %i -j ACCEPT;
+    iptables -D FORWARD -o %i -j ACCEPT;
+    iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE;
+    iptables -t nat -D POSTROUTING -o %i -j MASQUERADE;
+    iptables -t nat -D PREROUTING -p tcp --dport 6638 -j DNAT --to-destination <ESP32_WG_IP>:6638;
+    iptables -t nat -D PREROUTING -p tcp --dport 7638 -j DNAT --to-destination <ESP32_WG_IP>:7638
+```
+
+**3. OTBR add-on**
+
+OTBR runs with `host_network: true` and reaches the WireGuard add-on via the host's route to the
+hassio bridge. Do not set `device`, `baudrate` or `flow_control` when using `network_device`.
+
+```yaml
+network_device: <WG_ADDON_HASSIO_IP>:6638
+backbone_interface: <LAN_INTERFACE>
+```
+
+**4. Zigbee2MQTT**
+
+Z2M runs with `host_network: false` but shares the hassio bridge with the WireGuard add-on, so it
+can reach it directly.
+
+```yaml
+serial:
+  port: tcp://<WG_ADDON_HASSIO_IP>:7638
+  baudrate: 115200
+  rtscts: false
+  adapter: ember
+```
+
+**5. Restart order**
+
+1. WireGuard add-on — applies the iptables rules
+2. OTBR and/or Zigbee2MQTT
