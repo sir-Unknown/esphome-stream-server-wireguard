@@ -1,5 +1,10 @@
-Stream server for ESPHome
-=========================
+Stream server for ESPHome (fork)
+=================================
+
+> **This is a fork of [oxan/esphome-stream-server](https://github.com/oxan/esphome-stream-server).**
+>
+> Added functionality:
+> - **`bind_wg`** — optional config option that binds the TCP server exclusively to a WireGuard interface IP, so the port is only reachable through the VPN tunnel. When omitted, behaviour is identical to the upstream component (binds to `0.0.0.0`). If the WireGuard interface is not yet up at boot, binding is retried automatically each loop iteration until it succeeds.
 
 Custom component for ESPHome to expose a UART stream over WiFi or Ethernet. Provides a serial-to-wifi bridge as known
 from ESPLink or ser2net, using ESPHome.
@@ -80,3 +85,28 @@ stream_server:
 ```
 
 [uart-config]: https://esphome.io/components/uart.html#configuration-variables
+
+WireGuard binding
+-----------------
+
+Use `bind_wg` to restrict the TCP server to a WireGuard interface. The port will only be reachable through the VPN
+tunnel — connections from the regular WiFi/Ethernet interface are not accepted.
+
+```yaml
+external_components:
+  - source: github://sir-Unknown/esphome-stream-server
+
+wireguard:
+  id: my_wg
+  address: 172.27.66.2
+  # ... rest of WireGuard configuration
+
+stream_server:
+  uart_id: uart_bus
+  port: 7638
+  bind_wg: my_wg
+```
+
+If the WireGuard interface is not yet up when the device boots, the stream server will keep retrying in the background
+until the bind succeeds. No manual intervention or reboot is needed. Omitting `bind_wg` restores the default behaviour
+of binding to `0.0.0.0` (all interfaces).
