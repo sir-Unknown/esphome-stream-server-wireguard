@@ -18,27 +18,66 @@ void StreamServerComponent::setup() {
     // The make_unique() wrapper doesn't like arrays, so initialize the unique_ptr directly.
     this->buf_ = std::unique_ptr<uint8_t[]>{new uint8_t[this->buf_size_]};
 
-    struct sockaddr_storage bind_addr;
-#if ESPHOME_VERSION_CODE >= VERSION_CODE(2023, 4, 0)
-    socklen_t bind_addrlen = socket::set_sockaddr_any(reinterpret_cast<struct sockaddr *>(&bind_addr), sizeof(bind_addr), this->port_);
-#else
-    socklen_t bind_addrlen = socket::set_sockaddr_any(reinterpret_cast<struct sockaddr *>(&bind_addr), sizeof(bind_addr), htons(this->port_));
-#endif
+    if (!this->try_bind_()) {
+        // Bind failed (likely because the WireGuard interface is not up yet). Retry in loop().
+        this->bind_pending_ = true;
+    }
+}
 
-#if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 3, 0)    
-    this->socket_ = socket::socket_ip_loop_monitored(SOCK_STREAM, PF_INET).release();    
+bool StreamServerComponent::try_bind_() {
+    // Always create a fresh socket so that a previous failed bind() leaves no dirty state.
+#if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 3, 0)
+    delete this->socket_;
+    this->socket_ = socket::socket_ip_loop_monitored(SOCK_STREAM, PF_INET).release();
 #else
     this->socket_ = socket::socket_ip(SOCK_STREAM, PF_INET);
-#endif 
-      
+#endif
     this->socket_->setblocking(false);
-    this->socket_->bind(reinterpret_cast<struct sockaddr *>(&bind_addr), bind_addrlen);
-    this->socket_->listen(8);
 
-    this->publish_sensor();
+    struct sockaddr_storage bind_addr;
+    socklen_t bind_addrlen;
+
+#ifdef USE_WIREGUARD
+    if (this->wireguard_ != nullptr) {
+        // Bind exclusively to the WireGuard interface address.
+        bind_addrlen = socket::set_sockaddr(reinterpret_cast<struct sockaddr *>(&bind_addr), sizeof(bind_addr),
+                                            this->bind_address_, this->port_);
+        int err = this->socket_->bind(reinterpret_cast<struct sockaddr *>(&bind_addr), bind_addrlen);
+        if (err != 0) {
+            // EADDRNOTAVAIL means the WireGuard interface is not up yet — transient, retry later.
+            if (errno == EADDRNOTAVAIL) {
+                ESP_LOGD(TAG, "WireGuard interface not ready, will retry bind to %s:%u",
+                         this->bind_address_.c_str(), this->port_);
+                return false;
+            }
+            ESP_LOGE(TAG, "Failed to bind to %s:%u: errno %d", this->bind_address_.c_str(), this->port_, errno);
+            this->mark_failed();
+            return false;
+        }
+        ESP_LOGD(TAG, "Bound to WireGuard address %s:%u", this->bind_address_.c_str(), this->port_);
+    } else
+#endif
+    {
+#if ESPHOME_VERSION_CODE >= VERSION_CODE(2023, 4, 0)
+        bind_addrlen = socket::set_sockaddr_any(reinterpret_cast<struct sockaddr *>(&bind_addr), sizeof(bind_addr), this->port_);
+#else
+        bind_addrlen = socket::set_sockaddr_any(reinterpret_cast<struct sockaddr *>(&bind_addr), sizeof(bind_addr), htons(this->port_));
+#endif
+        this->socket_->bind(reinterpret_cast<struct sockaddr *>(&bind_addr), bind_addrlen);
+    }
+
+    this->socket_->listen(8);
+    return true;
 }
 
 void StreamServerComponent::loop() {
+    if (this->bind_pending_) {
+        if (!this->try_bind_()) {
+            return;
+        }
+        this->bind_pending_ = false;
+    }
+
     this->accept();
     this->read();
     this->flush();
@@ -48,11 +87,18 @@ void StreamServerComponent::loop() {
 
 void StreamServerComponent::dump_config() {
     ESP_LOGCONFIG(TAG, "Stream Server:");
-#if ESPHOME_VERSION_CODE >= VERSION_CODE(2025, 11, 0)
-    ESP_LOGCONFIG(TAG, "  Address: %s:%u", esphome::network::get_use_address(), this->port_);
-#else
-    ESP_LOGCONFIG(TAG, "  Address: %s:%u", esphome::network::get_use_address().c_str(), this->port_);
+#ifdef USE_WIREGUARD
+    if (this->wireguard_ != nullptr) {
+        ESP_LOGCONFIG(TAG, "  Address: %s:%u", this->bind_address_.c_str(), this->port_);
+    } else
 #endif
+    {
+#if ESPHOME_VERSION_CODE >= VERSION_CODE(2025, 11, 0)
+        ESP_LOGCONFIG(TAG, "  Address: %s:%u", esphome::network::get_use_address(), this->port_);
+#else
+        ESP_LOGCONFIG(TAG, "  Address: %s:%u", esphome::network::get_use_address().c_str(), this->port_);
+#endif
+    }
 #ifdef USE_BINARY_SENSOR
     LOG_BINARY_SENSOR("  ", "Connected:", this->connected_sensor_);
 #endif
@@ -64,8 +110,8 @@ void StreamServerComponent::dump_config() {
 void StreamServerComponent::on_shutdown() {
 #if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 3, 0)
     delete this->socket_;
-    this->socket_ = nullptr;    
-#endif 
+    this->socket_ = nullptr;
+#endif
 
     for (const Client &client : this->clients_)
         client.socket->shutdown(SHUT_RDWR);

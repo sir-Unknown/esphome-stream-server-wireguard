@@ -11,6 +11,9 @@
 #ifdef USE_SENSOR
 #include "esphome/components/sensor/sensor.h"
 #endif
+#ifdef USE_WIREGUARD
+#include "esphome/components/wireguard/wireguard.h"
+#endif
 
 #include <memory>
 #include <string>
@@ -28,6 +31,12 @@ public:
 #endif
 #ifdef USE_SENSOR
     void set_connection_count_sensor(esphome::sensor::Sensor *connection_count) { this->connection_count_sensor_ = connection_count; }
+#endif
+#ifdef USE_WIREGUARD
+    void set_bind_wg(esphome::wireguard::Wireguard *wg, const std::string &address) {
+        this->wireguard_ = wg;
+        this->bind_address_ = address;
+    }
 #endif
 
     void setup() override;
@@ -47,6 +56,9 @@ protected:
     void read();
     void flush();
     void write();
+
+    /// Attempt to bind and listen the server socket. Returns true on success.
+    bool try_bind_();
 
     size_t buf_index(size_t pos) { return pos & (this->buf_size_ - 1); }
     /// Return the number of consecutive elements that are ahead of @p pos in memory.
@@ -71,16 +83,22 @@ protected:
 #ifdef USE_SENSOR
     esphome::sensor::Sensor *connection_count_sensor_;
 #endif
+#ifdef USE_WIREGUARD
+    esphome::wireguard::Wireguard *wireguard_{nullptr};
+    std::string bind_address_{};
+#endif
 
     std::unique_ptr<uint8_t[]> buf_{};
     size_t buf_head_{0};
     size_t buf_tail_{0};
 
+    bool bind_pending_{false};
+
 #if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 3, 0)
     esphome::socket::ListenSocket *socket_{nullptr};
 #else
     std::unique_ptr<esphome::socket::Socket> socket_{};
-#endif 
+#endif
 
     std::vector<Client> clients_{};
 };
