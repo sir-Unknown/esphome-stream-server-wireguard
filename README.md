@@ -4,6 +4,9 @@ Stream server for ESPHome — with WireGuard binding
 Fork of [oxan/esphome-stream-server](https://github.com/oxan/esphome-stream-server) that adds
 **`bind_wg`**: an optional config option that restricts the TCP server to a WireGuard interface,
 so the serial port is only reachable through the VPN tunnel and not exposed on WiFi or Ethernet.
+See [WireGuard binding](#wireguard-binding) for configuration and Home Assistant add-on integration.
+
+-----
 
 Custom component for ESPHome to expose a UART stream over WiFi or Ethernet. Provides a serial-to-wifi bridge as known
 from ESPLink or ser2net, using ESPHome.
