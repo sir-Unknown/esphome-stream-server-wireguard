@@ -93,7 +93,7 @@ tunnel — connections from the regular WiFi/Ethernet interface are not accepted
 
 ```yaml
 external_components:
-  - source: github://sir-Unknown/esphome-stream-server
+  - source: github://sir-Unknown/esphome-stream-server-wireguard
 
 wireguard:
   id: my_wg
