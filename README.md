@@ -193,3 +193,23 @@ serial:
 
 1. WireGuard add-on — applies the iptables rules
 2. OTBR and/or Zigbee2MQTT
+
+**Tip: auto-restart OTBR after HA startup**
+
+OTBR starts before the WireGuard add-on has applied its iptables rules, which causes a
+"No route to host" error on boot. Add this automation to restart OTBR 60 seconds after
+Home Assistant starts:
+
+```yaml
+- id: restart_otbr_after_startup
+  alias: Restart OTBR after startup
+  triggers:
+    - trigger: homeassistant
+      event: start
+  actions:
+    - delay: "00:01:00"
+    - action: hassio.addon_restart
+      data:
+        addon: core_openthread_border_router
+  mode: single
+```
