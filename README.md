@@ -196,8 +196,8 @@ serial:
 
 **Tip: auto-restart OTBR after HA startup**
 
-OTBR starts before the WireGuard add-on has applied its iptables rules, which causes a
-"No route to host" error on boot. Add this automation to restart OTBR 60 seconds after
+On every cold boot, OTBR starts before the WireGuard add-on has applied its iptables rules,
+which causes a "No route to host" error. Add this automation to restart OTBR 60 seconds after
 Home Assistant starts:
 
 ```yaml
