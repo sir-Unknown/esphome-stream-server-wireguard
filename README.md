@@ -1,10 +1,9 @@
-Stream server for ESPHome (fork)
-=================================
+Stream server for ESPHome — with WireGuard binding
+===================================================
 
-> **This is a fork of [oxan/esphome-stream-server](https://github.com/oxan/esphome-stream-server).**
->
-> Added functionality:
-> - **`bind_wg`** — optional config option that binds the TCP server exclusively to a WireGuard interface IP, so the port is only reachable through the VPN tunnel. When omitted, behaviour is identical to the upstream component (binds to `0.0.0.0`). If the WireGuard interface is not yet up at boot, binding is retried automatically each loop iteration until it succeeds.
+Fork of [oxan/esphome-stream-server](https://github.com/oxan/esphome-stream-server) that adds
+**`bind_wg`**: an optional config option that restricts the TCP server to a WireGuard interface,
+so the serial port is only reachable through the VPN tunnel and not exposed on WiFi or Ethernet.
 
 Custom component for ESPHome to expose a UART stream over WiFi or Ethernet. Provides a serial-to-wifi bridge as known
 from ESPLink or ser2net, using ESPHome.
@@ -170,7 +169,7 @@ server:
 **3. OTBR add-on**
 
 OTBR runs with `host_network: true` and reaches the WireGuard add-on via the host's route to the
-hassio bridge. Do not set `device`, `baudrate` or `flow_control` when using `network_device`.
+hassio bridge.
 
 ```yaml
 network_device: <WG_ADDON_HASSIO_IP>:6638
@@ -185,9 +184,6 @@ can reach it directly.
 ```yaml
 serial:
   port: tcp://<WG_ADDON_HASSIO_IP>:7638
-  baudrate: 115200
-  rtscts: false
-  adapter: ember
 ```
 
 **5. Restart order**
