@@ -107,6 +107,18 @@ stream_server:
   bind_wg: my_wg
 ```
 
+It also works with multiple stream servers — each one can independently use `bind_wg` or not:
+
+```yaml
+stream_server:
+  - uart_id: uart1
+    port: 1234
+    bind_wg: my_wg   # only reachable via VPN
+
+  - uart_id: uart2
+    port: 1235        # reachable on all interfaces
+```
+
 If the WireGuard interface is not yet up when the device boots, the stream server will keep retrying in the background
 until the bind succeeds. No manual intervention or reboot is needed. Omitting `bind_wg` restores the default behaviour
 of binding to `0.0.0.0` (all interfaces).
